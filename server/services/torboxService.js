@@ -173,6 +173,12 @@ function pickPrimaryVideoFile(files, season = null, episode = null, options = {}
     const sNum = season != null ? Number(season) : 1;
     const fileName = (f) => String(f.name || f.short_name || "");
 
+    // The episode's own file name, stored from Torrentio's per-episode index ("EP05.mkv").
+    if (options.fileName) {
+      const named = videoFiles.find((f) => baseName(fileName(f)) === baseName(options.fileName));
+      if (named) return named;
+    }
+
     // Files carrying their own SxxEyy tag must match season and episode exactly.
     const exact = videoFiles.find((f) => episodeScope(fileName(f), sNum, epNum) === "exact");
     if (exact) return exact;

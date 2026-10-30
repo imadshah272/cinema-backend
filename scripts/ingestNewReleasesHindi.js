@@ -24,6 +24,7 @@
  * Flags:
  *   --industries=hollywood,bollywood,kollywood,tollywood,mollywood,sandalwood   (default: all)
  *   --from=YYYY-MM-DD --to=YYYY-MM-DD   release window (default: Jan 1 last year .. today)
+ *   --days=N         release window = the last N days (used by scripts/autopilot.js)
  *   --pages=N        TMDB pages per industry, 20 films each (default 2)
  *   --mode=top       all-time top rated + trending per industry instead of new releases
  *   --mode=franchises  most watched films per industry + every part of their collections
@@ -84,7 +85,11 @@ function parseArgs(argv) {
       .split(",")
       .map((s) => s.trim().toLowerCase())
       .filter((s) => INDUSTRIES[s]),
-    from: args.from || `${new Date().getFullYear() - 1}-01-01`,
+    from:
+      args.from ||
+      (Number(args.days) > 0
+        ? new Date(Date.now() - Number(args.days) * 86400000).toISOString().slice(0, 10)
+        : `${new Date().getFullYear() - 1}-01-01`),
     to: args.to || today,
     pages: Math.max(1, Number(args.pages) || 2),
     tmdbIds: args.tmdb ? String(args.tmdb).split(",").map((s) => s.trim()).filter(Boolean) : [],

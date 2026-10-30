@@ -16,6 +16,7 @@ const MAX_TORBOX_ATTEMPTS = 4;
 const AAC_NAME_RE = /\baac\b|\bhe-aac\b/i;
 /** Dolby / DTS audio: skipped by most Android phones, so Hindi would be silent. */
 const DOLBY_NAME_RE = /\b(dd\+?|ddp|ac3|eac3|e-ac-3|dts|truehd|atmos)\s*[\d.]*/i;
+const CAM_PRINT_RE = /\b(cam|camrip|hdcam|ts|hdts|telesync|tc|hdtc|telecine|predvd|pre[ ._-]?dvd|dvdscr|hdtscr|screener|hqcam)\b/i;
 
 function wantsHindiAudio(audio) {
   return /^(hi|hin|hindi|dual|ur|urdu)$/i.test(String(audio || ""));
@@ -27,9 +28,11 @@ function wantsHindiAudio(audio) {
  * kept when their release is a pack, never another episode's single file.
  */
 async function loadSourceRows(supabase, tmdbId, mediaType, season, episode) {
-  const columns = "id, media_id, media_title, stream_url, download_url, magnet_link, language, quality, source_type, size_bytes, payload";
+  const columns = "id, media_id, media_title, stream_url, download_url, magnet_link, language, quality, source_type, size_bytes, seeders, payload";
+  // Rows hidden by scripts/repairMediaSources.js (wrong film, 4K, wrong season ...) are never served.
+  const ready = () => supabase.from("media_sources").select(columns).eq("status", "ready");
   if (mediaType !== "tv") {
-    const { data, error } = await supabase.from("media_sources").select(columns).eq("media_id", String(tmdbId)).limit(50);
+    const { data, error } = await ready().eq("media_id", String(tmdbId)).limit(50);
     if (error) throw error;
     return data || [];
   }
@@ -37,13 +40,11 @@ async function loadSourceRows(supabase, tmdbId, mediaType, season, episode) {
   const sPadded = String(season).padStart(2, "0");
   const ePadded = String(episode).padStart(2, "0");
   const exactIds = [`${tmdbId}-s${sPadded}e${ePadded}`, `${tmdbId}-s${season}e${episode}`];
-  const { data: exact, error } = await supabase.from("media_sources").select(columns).in("media_id", exactIds).limit(50);
+  const { data: exact, error } = await ready().in("media_id", exactIds).limit(50);
   if (error) throw error;
 
   // Season-level rows: show id, or any row of the same season (packs are stored per episode).
-  const { data: seasonRows } = await supabase
-    .from("media_sources")
-    .select(columns)
+  const { data: seasonRows } = await ready()
     .or(`media_id.eq.${tmdbId},media_id.ilike.${tmdbId}-s${sPadded}%`)
     .limit(200);
 
@@ -83,13 +84,17 @@ function rankCandidates(rows, { mediaType, season, episode, audio, quality, qual
   const scopeRank = (scope) => (scope === "exact" ? 0 : 1);
   // Hindi first: a release whose Hindi track a phone can play beats a Dolby-only Dual release.
   const codecRank = (name) => (AAC_NAME_RE.test(name) ? 0 : DOLBY_NAME_RE.test(name) ? 2 : 1);
+  // A clean print (WEB-DL / BluRay) replaces a cinema print as soon as one is stored.
+  const camRank = (name) => (CAM_PRINT_RE.test(name) ? 1 : 0);
 
   return candidates.sort(
     (a, b) =>
       qRank(a.quality) - qRank(b.quality) ||
+      camRank(a.name) - camRank(b.name) ||
       codecRank(a.name) - codecRank(b.name) ||
       audioRank(a.kind) - audioRank(b.kind) ||
-      scopeRank(a.scope) - scopeRank(b.scope)
+      scopeRank(a.scope) - scopeRank(b.scope) ||
+      (Number(b.row.seeders) || 0) - (Number(a.row.seeders) || 0)
   );
 }
 
@@ -120,9 +125,13 @@ async function resolveFirstPlayable(candidates, { season, episode, isTv, hindi =
     if (!magnet || attempts >= MAX_TORBOX_ATTEMPTS) continue;
     attempts += 1;
     try {
-      const tb = await torboxService.resolveDirectTorboxStream(magnet, isTv
-        ? { season, episode, singleEpisode: cand.scope === "exact" }
-        : { fileName: cand.row.payload?.file_name || null });
+      // A pack row's file_name names the file of the row's own episode, so it is only a
+      // hint when the row belongs to the requested episode.
+      const ownRow = !isTv || new RegExp(`-s0*${season}e0*${episode}$`, "i").test(cand.row.media_id || "");
+      const tb = await torboxService.resolveDirectTorboxStream(magnet, {
+        ...(isTv ? { season, episode, singleEpisode: cand.scope === "exact" } : {}),
+        fileName: ownRow ? cand.row.payload?.file_name || null : null,
+      });
       if (!tb || !tb.streamUrl) continue;
       const resolved = { cand, streamUrl: tb.streamUrl, downloadUrl: tb.downloadUrl, torbox: tb, audioProbe: null };
       if (!hindi) return resolved;

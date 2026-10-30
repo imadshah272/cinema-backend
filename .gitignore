@@ -141,3 +141,4 @@ vite.config.ts.timestamp-*
 # Local ingestion reports and Supabase fix backups (contain row data)
 scripts/.new-releases-hindi*.json
 scripts/.media-sources-fix-backup-*.json
+scripts/.autopilot-last.json

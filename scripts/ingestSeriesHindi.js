@@ -30,9 +30,9 @@ const env = require("../server/config/env");
 const { getSupabaseClient, MEDIA_CONTENT_TABLE, MEDIA_SOURCES_TABLE } = require("../server/services/supabaseClient");
 const { saveTorrentRelease } = require("../server/services/mediaSourceService");
 const { releaseName, hindiAudioKind, audioLabel, detectQuality, episodeScope, packCoversSeason } = require("../server/services/releaseAudio");
+const { fetchTorrentio } = require("../server/services/torrentioClient");
 
 const TMDB = "https://api.themoviedb.org/3";
-const TORRENTIO = "https://torrentio.strem.fun/stream/series";
 const VPS_BASE_URL = process.env.BASE_URL || "http://168.144.249.68:4555";
 const REPORT_FILE = path.join(__dirname, ".new-releases-hindi-series.json");
 const CONCURRENCY = 3;
@@ -246,7 +246,7 @@ async function processShow(supabase, showId, opts) {
       result.episodesChecked++;
       let streams = [];
       try {
-        streams = (await getJson(`${TORRENTIO}/${imdbId}:${s.season_number}:${ep.episode_number}.json`)).streams || [];
+        streams = (await fetchTorrentio(`series/${imdbId}:${s.season_number}:${ep.episode_number}`)).streams || [];
       } catch {
         continue;
       }

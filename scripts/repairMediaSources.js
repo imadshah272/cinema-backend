@@ -23,6 +23,7 @@ require("dotenv").config({ quiet: true });
 const env = require("../server/config/env");
 const { getSupabaseClient, MEDIA_CONTENT_TABLE, MEDIA_SOURCES_TABLE } = require("../server/services/supabaseClient");
 const { releaseName, hindiAudioKind, detectQuality, episodeScope, packCoversSeason } = require("../server/services/releaseAudio");
+const { fetchTorrentio } = require("../server/services/torrentioClient");
 
 const APPLY = process.argv.includes("--apply");
 const SKIP_SIZES = process.argv.includes("--skip-sizes");
@@ -30,7 +31,6 @@ const GB = 1024 ** 3;
 const MB = 1024 ** 2;
 const HARD_MAX_BYTES = { "480p": 1.5 * GB, "720p": 4 * GB, "1080p": 8 * GB };
 const CAM_RE = /\b(cam|camrip|hdcam|ts|hdts|telesync|tc|hdtc|telecine|predvd|pre[ ._-]?dvd|scr|dvdscr|hdtscr|screener|hqcam)\b/i;
-const TORRENTIO = "https://torrentio.strem.fun/stream";
 const CONCURRENCY = 3;
 
 async function readAll(supabase, table, columns, filter = (q) => q) {
@@ -84,7 +84,7 @@ async function imdbIdFor(kind, tmdbId) {
 
 /** hash -> { size, fileName, fileIdx } for one Torrentio item (movie or one episode). */
 async function torrentioFiles(path) {
-  const data = await getJson(`${TORRENTIO}/${path}.json`);
+  const data = await fetchTorrentio(path).catch(() => null);
   const out = new Map();
   for (const s of data?.streams || []) {
     if (!s.infoHash) continue;

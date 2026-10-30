@@ -46,9 +46,9 @@ const env = require("../server/config/env");
 const { getSupabaseClient, MEDIA_CONTENT_TABLE, MEDIA_SOURCES_TABLE } = require("../server/services/supabaseClient");
 const { saveTorrentRelease } = require("../server/services/mediaSourceService");
 const { releaseName, hindiAudioKind, audioLabel, detectQuality } = require("../server/services/releaseAudio");
+const { fetchTorrentio } = require("../server/services/torrentioClient");
 
 const TMDB = "https://api.themoviedb.org/3";
-const TORRENTIO = "https://torrentio.strem.fun/stream/movie";
 const VPS_BASE_URL = process.env.BASE_URL || "http://168.144.249.68:4555";
 const REPORT_FILE = path.join(__dirname, ".new-releases-hindi.json");
 const CONCURRENCY = 3;
@@ -395,7 +395,7 @@ async function processFilm(supabase, entry, opts) {
 
   let streams = [];
   try {
-    streams = (await getJson(`${TORRENTIO}/${film.imdbId}.json`, 20000, 2)).streams || [];
+    streams = (await fetchTorrentio(`movie/${film.imdbId}`)).streams || [];
   } catch (err) {
     return { ...result, status: `torrentio error: ${err.message}` };
   }

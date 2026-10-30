@@ -426,7 +426,11 @@ async function saveCachedSource(params, resolved) {
     return saveTorrentRelease(params, { ...resolved, ...magnet });
   }
   if (isTorrentArtifactUrl(storedUrl)) return null;
-  const embed = resolved?.source_type === "embed_stream";
+  // A cloud player link (vidsrc / vidlink ...) is rebuilt from the TMDB id on every request.
+  // Stored, it was labelled with the *requested* language ("Hindi") and a made-up 1080p,
+  // although these players mostly play English, so it is never written to media_sources.
+  if (resolved?.source_type === "embed_stream") return null;
+  const embed = false;
   const size = publicSize(resolved);
   const sizeBytes = size.size_bytes;
   if (!embed) {

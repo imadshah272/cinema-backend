@@ -114,7 +114,7 @@ async function main() {
   const rows = await readAll(
     supabase,
     MEDIA_SOURCES_TABLE,
-    "id, media_id, media_title, language, quality, seeders, size_bytes, magnet_link, download_url, payload, status",
+    "id, media_id, media_title, language, quality, seeders, size_bytes, magnet_link, download_url, payload, status, source_type",
     (q) => q.eq("status", "ready")
   );
   console.log(`ready rows: ${rows.length}`);
@@ -129,6 +129,11 @@ async function main() {
     const quality = detectQuality(name, row.quality);
     const size = Number(row.size_bytes) || 0;
 
+    // Cloud player placeholder (vidsrc/vidlink link, no file): fake label and quality.
+    if (row.source_type === "embed_stream") {
+      hide.set(row.id, "cloud player placeholder");
+      continue;
+    }
     if (quality === "2160p" || row.quality === "2160p") hide.set(row.id, "4k ignored");
     else if (!ep && size && HARD_MAX_BYTES[quality] && size > HARD_MAX_BYTES[quality]) hide.set(row.id, "too large to stream");
 

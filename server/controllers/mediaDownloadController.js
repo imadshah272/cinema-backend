@@ -307,20 +307,21 @@ const getMediaSources = asyncHandler(async (req, res) => {
     return item;
   });
 
-  // Prepend instant clean cloud stream as Priority #1 so web and mobile players start in 1 second
+  // Cloud player as the last fallback, after every real Hindi release. Its audio is whatever
+  // the player has (mostly English) and its quality is not known, so it is labelled as such.
   if (mediaId && !isNaN(Number(mediaId))) {
     const isTv = (season && Number(season) > 0) || (episode && Number(episode) > 0);
     const cleanStreamUrl = isTv
       ? `https://vidlink.pro/tv/${encodeURIComponent(mediaId)}/${season || 1}/${episode || 1}?primaryColor=E50914&autoplay=true`
       : `https://vidlink.pro/movie/${encodeURIComponent(mediaId)}?primaryColor=E50914&autoplay=true`;
 
-    items.unshift({
+    items.push({
       id: `cloud-${mediaId}`,
       media_id: String(mediaId),
       media_title: title || "HD Cloud Stream",
-      language: "Hindi / Dual Audio",
-      language_label: "Hindi / Dual Audio",
-      quality: "1080p",
+      language: "Original",
+      language_label: "Original",
+      quality: "auto",
       source_type: "embed_stream",
       stream_url: cleanStreamUrl,
       download_url: isTv

@@ -22,7 +22,7 @@
 require("dotenv").config({ quiet: true });
 const env = require("../server/config/env");
 const { getSupabaseClient, MEDIA_CONTENT_TABLE, MEDIA_SOURCES_TABLE } = require("../server/services/supabaseClient");
-const { releaseName, hindiAudioKind, detectQuality, episodeScope, packCoversSeason } = require("../server/services/releaseAudio");
+const { releaseName, hindiAudioKind, audioLabel, detectQuality, episodeScope, packCoversSeason } = require("../server/services/releaseAudio");
 const { fetchTorrentio } = require("../server/services/torrentioClient");
 
 const APPLY = process.argv.includes("--apply");
@@ -31,6 +31,7 @@ const GB = 1024 ** 3;
 const MB = 1024 ** 2;
 const HARD_MAX_BYTES = { "480p": 1.5 * GB, "720p": 4 * GB, "1080p": 8 * GB };
 const CAM_RE = /\b(cam|camrip|hdcam|ts|hdts|telesync|tc|hdtc|telecine|predvd|pre[ ._-]?dvd|scr|dvdscr|hdtscr|screener|hqcam)\b/i;
+const MULTI_FILM_RE = /\b(collection|trilogy|duology|quadrilogy|franchise|anthology|\d+[ ._-]?movies|phase[ ._-]?[iv1-6]+)\b|\b(19|20)\d{2}\s*[-–]\s*(19|20)\d{2}\b/i;
 const CONCURRENCY = 3;
 
 async function readAll(supabase, table, columns, filter = (q) => q) {
@@ -107,8 +108,9 @@ async function main() {
   const supabase = getSupabaseClient();
   console.log(APPLY ? "APPLY: writing repairs" : "DRY RUN (use --apply to write)");
 
-  const content = await readAll(supabase, MEDIA_CONTENT_TABLE, "external_id, media_type, year:details->>year");
+  const content = await readAll(supabase, MEDIA_CONTENT_TABLE, "external_id, media_type, year:details->>year, lang:details->>original_language");
   const years = new Map(content.map((c) => [`${c.media_type === "tv" ? "tv" : "movie"}:${c.external_id}`, Number(c.year) || null]));
+  const langs = new Map(content.map((c) => [`${c.media_type === "tv" ? "tv" : "movie"}:${c.external_id}`, c.lang || ""]));
   const rows = await readAll(
     supabase,
     MEDIA_SOURCES_TABLE,
@@ -138,6 +140,8 @@ async function main() {
       const year = years.get(`movie:${row.media_id}`);
       const ry = releaseYears(name);
       if (year && ry.length && !ry.some((y) => Math.abs(y - year) <= 1)) hide.set(row.id, `wrong film: release ${ry.join("/")} vs ${year}`);
+      // Without the film's file name, TorBox would play the largest film of the pack.
+      if (MULTI_FILM_RE.test(name) && !row.payload?.file_name) hide.set(row.id, "multi-film pack without file name");
       const key = `${row.media_id}|${quality}`;
       if (!byMovieQuality.has(key)) byMovieQuality.set(key, []);
       byMovieQuality.get(key).push({ row, cam: CAM_RE.test(name), hindi: Boolean(hindiAudioKind(name)) });
@@ -154,16 +158,42 @@ async function main() {
   for (const [id, q] of qualityFix) {
     const row = rows.find((r) => r.id === id);
     const key = `${row.media_id}|${q}|${row.language}`;
-    if (taken.has(key)) qualityFix.delete(id);
-    else {
+    if (taken.has(key)) {
+      // The real quality is already stored for this title and label: duplicate.
+      qualityFix.delete(id);
+      hide.set(id, `duplicate: ${row.language} ${q} already stored`);
+      taken.delete(`${row.media_id}|${row.quality}|${row.language}`);
+    } else {
       taken.delete(`${row.media_id}|${row.quality}|${row.language}`);
       taken.add(key);
     }
   }
 
+  // Label from the release name. When the right label is already held by another ready
+  // row of the same title and quality, this row is a duplicate and is hidden instead.
+  const labelFix = new Map(); // id -> label
+  for (const row of rows) {
+    if (hide.has(row.id)) continue;
+    const isEp = /-s\d+e\d+$/i.test(row.media_id || "");
+    const baseId = String(row.media_id || "").replace(/-.*/, "");
+    const expected = audioLabel(hindiAudioKind(releaseName(row), langs.get(`${isEp ? "tv" : "movie"}:${baseId}`)));
+    if (expected === row.language) continue;
+    const quality = qualityFix.get(row.id) || row.quality;
+    const key = `${row.media_id}|${quality}|${expected}`;
+    if (taken.has(key)) {
+      hide.set(row.id, `duplicate: ${expected} ${quality} already stored`);
+      qualityFix.delete(row.id);
+    } else {
+      labelFix.set(row.id, expected);
+      taken.add(key);
+    }
+    taken.delete(`${row.media_id}|${quality}|${row.language}`);
+  }
+
   const reasons = [...hide.values()].reduce((m, r) => ((m[r.replace(/:.*/, "")] = (m[r.replace(/:.*/, "")] || 0) + 1), m), {});
   console.log("hide:", reasons);
   console.log("quality fixes:", qualityFix.size);
+  console.log("label fixes:", labelFix.size);
 
   // Size pass: one Torrentio lookup per episode / movie that needs it.
   const sizeFix = new Map(); // id -> { size, fileName, fileIdx }
@@ -224,6 +254,7 @@ async function main() {
   };
   for (const [id, reason] of hide) patch(id, { status: "hidden" }, { hidden_reason: reason, hidden_at: now });
   for (const [id, q] of qualityFix) patch(id, { quality: q }, { previous_quality: byId.get(id).quality });
+  for (const [id, label] of labelFix) patch(id, { language: label }, { language_label: label, previous_language: byId.get(id).language });
   for (const [id, f] of sizeFix) {
     patch(
       id,

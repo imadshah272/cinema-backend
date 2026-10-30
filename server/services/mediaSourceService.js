@@ -891,6 +891,7 @@ async function saveTorrentRelease(params, release) {
     mediaType: params.mediaType,
     metadata: release.title || params.title,
     seeders: release.seeders ?? release.seeds ?? 5,
+    allowCamPrint: Boolean(params.allowCamPrint),
   });
   if (!accepted.ok) return null;
   const size = publicSize({ ...release, ...accepted, magnet_link: magnet });
@@ -936,6 +937,8 @@ async function saveTorrentRelease(params, release) {
       rating: meta.rating,
       tmdb_id: rawMediaId || null,
       ...(isEp ? { season: s, episode: e } : {}),
+      // Multi-film packs (MCU collection ...): the file inside the torrent that is this film.
+      ...(release.file_name ? { file_name: release.file_name, file_idx: release.file_idx ?? null } : {}),
     },
   };
   try {

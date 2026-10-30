@@ -9,6 +9,7 @@
 
 const env = require("../config/env");
 const { memoryCache } = require("./memoryCache");
+const { episodeScope } = require("./releaseAudio");
 
 const TORBOX_BASE_URL = "https://api.torbox.app/v1/api";
 
@@ -145,7 +146,7 @@ async function getTorrentFiles(torrentId) {
 /**
  * Pick the largest primary media/video file (ignoring samples, txt, nfo).
  */
-function pickPrimaryVideoFile(files, season = null, episode = null) {
+function pickPrimaryVideoFile(files, season = null, episode = null, options = {}) {
   if (!Array.isArray(files) || files.length === 0) return null;
 
   const videoFiles = files.filter((f) => {
@@ -165,36 +166,48 @@ function pickPrimaryVideoFile(files, season = null, episode = null) {
     return sorted[0] || null;
   }
 
-  // If episode is provided (TV show), find matching episode file inside Season Pack
+  // If episode is provided (TV show), only the matching episode file inside the pack is valid.
+  // Never fall back to the largest/first file: that served S01E01 for every episode.
   if (episode != null) {
     const epNum = Number(episode);
     const sNum = season != null ? Number(season) : 1;
-    const sPadded = String(sNum).padStart(2, "0");
-    const ePadded = String(epNum).padStart(2, "0");
+    const fileName = (f) => String(f.name || f.short_name || "");
 
+    // Files carrying their own SxxEyy tag must match season and episode exactly.
+    const exact = videoFiles.find((f) => episodeScope(fileName(f), sNum, epNum) === "exact");
+    if (exact) return exact;
+
+    // Untagged files (e.g. "Season 1/05 - Title.mkv", "1x05", "Episode 5").
     const patterns = [
-      new RegExp(`s0*${sNum}[._ -]*e0*${epNum}\\b`, "i"),
-      new RegExp(`\\b${sNum}x0*${epNum}\\b`, "i"),
-      new RegExp(`\\be0*${epNum}\\b`, "i"),
-      new RegExp(`\\bep[._ -]*0*${epNum}\\b`, "i"),
-      new RegExp(`\\bepisode[._ -]*0*${epNum}\\b`, "i"),
-      new RegExp(`[._ -]0*${epNum}[._ -]`, "i"),
+      new RegExp(`\\b${sNum}x0*${epNum}(?!\\d)`, "i"),
+      new RegExp(`\\bep(?:isode)?[._ -]*0*${epNum}(?!\\d)`, "i"),
+      new RegExp(`\\be0*${epNum}(?!\\d)`, "i"),
+      new RegExp(`(?:^|/)0*${epNum}(?!\\d)[^/]*$`, "i"),
     ];
-
+    const untagged = videoFiles.filter((f) => episodeScope(fileName(f), sNum, epNum) === "pack");
     for (const pattern of patterns) {
-      const match = videoFiles.find((f) => {
-        const name = String(f.name || f.short_name || "").toLowerCase();
-        return pattern.test(name);
-      });
-      if (match) {
-        return match;
-      }
+      const match = untagged.find((f) => pattern.test(fileName(f)));
+      if (match) return match;
     }
+
+    // A single-file torrent already scoped to this episode by its release name.
+    if (options.singleEpisode && videoFiles.length === 1) return videoFiles[0];
+    return null;
+  }
+
+  // Multi-film pack: only the named file is this film. The largest file would be another part.
+  if (options.fileName) {
+    const wanted = baseName(options.fileName);
+    return videoFiles.find((f) => baseName(f.name || f.short_name) === wanted) || null;
   }
 
   // Fallback to largest video file
   videoFiles.sort((a, b) => (b.size || 0) - (a.size || 0));
   return videoFiles[0];
+}
+
+function baseName(name) {
+  return String(name || "").split(/[\\/]/).pop().trim().toLowerCase();
 }
 
 /**
@@ -250,7 +263,9 @@ async function resolveDirectTorboxStream(magnetLink, options = {}) {
 
   // 1. Check in-memory cache first (2-hour TTL to match link validity)
   const epKey = episode != null ? `:s${season ?? 1}e${episode}` : "";
-  const cacheKey = `torbox:link:${hash}${epKey}`;
+  // Films of one pack share a hash, so the file name is part of the key.
+  const fileKey = options?.fileName ? `:f:${baseName(options.fileName)}` : "";
+  const cacheKey = `torbox:link:${hash}${epKey}${fileKey}`;
   const cached = memoryCache.get(cacheKey);
   if (cached) {
     return { ...cached, fromCache: true };
@@ -263,11 +278,19 @@ async function resolveDirectTorboxStream(magnetLink, options = {}) {
 
     // 3. Inspect files inside the torrent
     const files = await getTorrentFiles(created.torrent_id);
-    const primaryFile = pickPrimaryVideoFile(files, season, episode);
-    const fileId = primaryFile?.id || (files && files[0]?.id) || null;
+    if (!files || files.length === 0) return null;
+    const primaryFile = pickPrimaryVideoFile(files, season, episode, {
+      singleEpisode: options?.singleEpisode,
+      fileName: options?.fileName,
+    });
+    if (!primaryFile || primaryFile.id == null) {
+      if (episode != null) console.warn(`[TorboxService] S${season}E${episode} not found in torrent ${created.torrent_id}`);
+      else if (options?.fileName) console.warn(`[TorboxService] "${options.fileName}" not found in torrent ${created.torrent_id}`);
+      return null;
+    }
 
     // 4. Request direct download URL
-    const directUrl = await requestDownloadLink(created.torrent_id, fileId);
+    const directUrl = await requestDownloadLink(created.torrent_id, primaryFile.id);
     if (!directUrl) return null;
 
     const result = {
@@ -296,4 +319,5 @@ module.exports = {
   requestDownloadLink,
   resolveDirectTorboxStream,
   extractInfoHash,
+  pickPrimaryVideoFile,
 };

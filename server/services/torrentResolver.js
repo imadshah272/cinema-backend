@@ -19,6 +19,8 @@ const PRIMARY_PROVIDERS = ["1337x", "TorrentGalaxy", "ThePirateBay", "Limetorren
 const SECONDARY_PROVIDERS = ["Yts", "Eztv", "KickassTorrents", "Torrentz2"];
 
 const JUNK_TITLE_RE = /\b(sample|trailer|teaser|camrip|telesync|screener)\b/i;
+/** Never a full film, even when cinema prints are allowed. */
+const NOT_A_FILM_RE = /\b(sample|trailer|teaser)\b/i;
 const CONTAINER_RE = /\.(mkv|mp4|avi|webm)\b|\bx264\b|\bx265\b|\bhevc\b|\bweb[\s._-]*dl\b|\bblu[\s._-]?ray\b|\bhdrip\b|\bwebrip\b|\bbrrip\b|\bdvdrip\b|\bhdtv\b|\baac\b/i;
 const DUB_MARKER_RE = /\b(hindi|hin|urdu|dual|multi|dubbed|dha)\b/i;
 const INDIAN_INDUSTRY_RE = /\b(india|indian|bollywood|tollywood|kollywood|mollywood|sandalwood|hindi|tamil|telugu|malayalam|kannada)\b|\b(hi|ta|te|ml|kn|in)\b/i;
@@ -202,10 +204,11 @@ function hasCleanContainer(title, metadata) {
  * Seeders are enforced only when the caller supplies a number.
  * @returns {{ ok: true, quality: string, size_bytes: number, size_human: string, kind: string } | { ok: false }}
  */
-function acceptTorrentRelease({ title, sizeBytes, size, quality, mediaType, metadata, seeders } = {}) {
+function acceptTorrentRelease({ title, sizeBytes, size, quality, mediaType, metadata, seeders, allowCamPrint = false } = {}) {
   const name = String(title || "");
   const extra = String(metadata || "");
-  if (!name || JUNK_TITLE_RE.test(name) || JUNK_TITLE_RE.test(extra)) return { ok: false };
+  const junkRe = allowCamPrint ? NOT_A_FILM_RE : JUNK_TITLE_RE;
+  if (!name || junkRe.test(name) || junkRe.test(extra)) return { ok: false };
   if (!hasCleanContainer(name, extra) && !quality) return { ok: false };
 
   const bytes = parseByteSize(sizeBytes, size, extra);

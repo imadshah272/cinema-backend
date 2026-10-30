@@ -15,6 +15,7 @@ const TorrentSearchApi = require("torrent-search-api");
 const env = require("../config/env");
 const { enqueueDownloadRequest, findCachedSource } = require("./mediaSourceService");
 const { acceptTorrentRelease, magnetWrite } = require("./torrentResolver");
+const { hindiAudioKind } = require("./releaseAudio");
 const {
   MIN_VIDEO_BYTES,
   isTorrentArtifactUrl,
@@ -311,12 +312,12 @@ function describeRelease(item, requestedLanguage, requestedQuality) {
   const text = `${item?.title || ""} ${(item?.language_tags || []).join(" ")}`;
   const tags = item?.language_tags || meta.languageTags || [];
   const urdu = tags.includes("urdu") || (/\burdu\b/i.test(text) && !/\bhindi\b/i.test(text));
-  const dual =
-    /dual[ ._-]?audio|dual\s*\[\s*hindi|hindi\s*\+\s*eng/i.test(text) ||
-    (/\bhindi\b/i.test(text) && /\benglish\b/i.test(text));
+  // "DUAL" alone is usually Portuguese/Spanish + English, and bare "DUBBED" is an English dub.
+  // Dual Audio [Hindi+Eng] needs Hindi named in the release itself.
+  const dual = hindiAudioKind(item?.title || "") === "dual";
   const hindi =
     tags.includes("hindi") ||
-    /\bhindi\b|\bdesi\b|hq-hindi|multi[ ._-]?audio|hindi\s*5\.1|hindi\s*\+\s*tamil\s*\+\s*telugu|\bdubbed\b|org\s*2ch/i.test(text);
+    /\bhindi\b|\bhin\b|\bdesi\b|hq-hindi|hindi\s*5\.1|org\s*2ch/i.test(text);
   let language = "English";
   if (dual) language = "Dual Audio [Hindi+Eng]";
   else if (urdu) language = "Urdu";

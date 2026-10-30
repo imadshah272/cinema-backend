@@ -66,7 +66,7 @@ function rankCandidates(rows, { mediaType, season, episode, audio, quality, qual
     const scope = mediaType === "tv" ? episodeScope(name, season, episode) : "movie";
     if (scope === "other") continue;
     if (scope === "pack" && !packCoversSeason(name, season)) continue;
-    const kind = hindiAudioKind(name);
+    const kind = hindiAudioKind(name, row.payload?.original_language);
     if (hindiOnly && !kind) continue;
     candidates.push({
       row,

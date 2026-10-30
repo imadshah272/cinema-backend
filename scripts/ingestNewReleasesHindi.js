@@ -436,6 +436,7 @@ async function processFilm(supabase, entry, opts) {
           rating: film.raw.vote_average ? Math.round(film.raw.vote_average * 10) : null,
           baseUrl: VPS_BASE_URL,
           allowCamPrint: c.cam,
+          originalLanguage: film.originalLanguage,
         },
         {
           title: c.release,

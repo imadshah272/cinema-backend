@@ -177,6 +177,15 @@ async function main() {
   // Label from the release name. When the right label is already held by another ready
   // row of the same title and quality, this row is a duplicate and is hidden instead.
   const labelFix = new Map(); // id -> label
+  // Hindi-original films: the stream endpoint needs payload.original_language to accept
+  // releases that do not say "Hindi" (the audio is Hindi by default).
+  const langFix = new Map(); // id -> original language
+  for (const row of rows) {
+    if (hide.has(row.id) || row.payload?.original_language) continue;
+    const isEp = /-s\d+e\d+$/i.test(row.media_id || "");
+    const lang = langs.get(`${isEp ? "tv" : "movie"}:${String(row.media_id || "").replace(/-.*/, "")}`);
+    if (lang === "hi" || lang === "ur") langFix.set(row.id, lang);
+  }
   for (const row of rows) {
     if (hide.has(row.id)) continue;
     const isEp = /-s\d+e\d+$/i.test(row.media_id || "");
@@ -199,6 +208,7 @@ async function main() {
   console.log("hide:", reasons);
   console.log("quality fixes:", qualityFix.size);
   console.log("label fixes:", labelFix.size);
+  console.log("original language added (Hindi-original films):", langFix.size);
 
   // Size pass: one Torrentio lookup per episode / movie that needs it.
   const sizeFix = new Map(); // id -> { size, fileName, fileIdx }
@@ -260,6 +270,7 @@ async function main() {
   for (const [id, reason] of hide) patch(id, { status: "hidden" }, { hidden_reason: reason, hidden_at: now });
   for (const [id, q] of qualityFix) patch(id, { quality: q }, { previous_quality: byId.get(id).quality });
   for (const [id, label] of labelFix) patch(id, { language: label }, { language_label: label, previous_language: byId.get(id).language });
+  for (const [id, lang] of langFix) patch(id, {}, { original_language: lang });
   for (const [id, f] of sizeFix) {
     patch(
       id,

@@ -46,6 +46,9 @@ function releaseName(source) {
   return parts.filter(Boolean).join(" ");
 }
 
+/** A release of a Hindi-original film whose name points at a dubbed / other-language track. */
+const OTHER_TRACK_RE = /\b(tamil|tam|telugu|tel|malayalam|mal|kannada|kan|bengali|marathi|punjabi|gujarati|bhojpuri|english|eng|dubbed|dub|dual|multi|lat|latino|spa|spanish|rus|ita|fre|french|ger|kor|chi|jpn|tha)\b/i;
+
 /** English named explicitly; "DUAL"/"MULTI" alone don't say which second track. */
 const EXPLICIT_ENGLISH_RE = /\beng\b|\benglish\b|hin[ ._-]?eng/i;
 
@@ -56,8 +59,13 @@ const EXPLICIT_ENGLISH_RE = /\beng\b|\benglish\b|hin[ ._-]?eng/i;
  */
 function hindiAudioKind(name, originalLanguage) {
   const text = String(name || "");
-  if (!HINDI_RE.test(text)) return null;
   const lang = String(originalLanguage || "").toLowerCase();
+  if (!HINDI_RE.test(text)) {
+    // A Bollywood (or Urdu) film's own audio is Hindi, and its releases rarely say so
+    // ("Hostel 2011 1080p WEB-DL"). Only a name that points at another track is refused.
+    if ((lang === "hi" || lang === "ur") && !OTHER_TRACK_RE.test(text)) return "hindi";
+    return null;
+  }
   const englishRe = lang && lang !== "en" ? EXPLICIT_ENGLISH_RE : ENGLISH_RE;
   return englishRe.test(text) ? "dual" : "hindi";
 }

@@ -943,6 +943,8 @@ async function saveTorrentRelease(params, release) {
       ...(isEp ? { season: s, episode: e } : {}),
       // Multi-film packs (MCU collection ...): the file inside the torrent that is this film.
       ...(release.file_name ? { file_name: release.file_name, file_idx: release.file_idx ?? null } : {}),
+      // The film's own language: a Hindi-original release is Hindi without saying so.
+      ...(params.originalLanguage ? { original_language: params.originalLanguage } : {}),
     },
   };
   try {

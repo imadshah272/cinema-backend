@@ -275,6 +275,7 @@ async function processShow(supabase, showId, opts) {
             backdropUrl: details.backdrop_url,
             rating: d.vote_average ? Math.round(d.vote_average * 10) : null,
             baseUrl: VPS_BASE_URL,
+            originalLanguage: d.original_language,
           },
           {
             // Episode-shaped title so the size check treats it as one episode, not a season pack.

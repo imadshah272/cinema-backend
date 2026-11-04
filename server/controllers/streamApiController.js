@@ -64,9 +64,14 @@ function rankCandidates(rows, { mediaType, season, episode, audio, quality, qual
   const candidates = [];
   for (const row of rows) {
     const name = releaseName(row);
-    const scope = mediaType === "tv" ? episodeScope(name, season, episode) : "movie";
+    // A row stored for exactly this episode was matched to its file when it was ingested. Its file name
+    // often carries the episode tag the torrent name lacks ("...S01E01.mkv"), and its release name may not
+    // say which season it is (many Hindi shows), so neither rejects it.
+    const ownRow = mediaType === "tv" && new RegExp(`-s0*${season}e0*${episode}$`, "i").test(row.media_id || "");
+    const scopeName = ownRow ? `${name} ${row.payload?.file_name || ""}` : name;
+    const scope = mediaType === "tv" ? episodeScope(scopeName, season, episode) : "movie";
     if (scope === "other") continue;
-    if (scope === "pack" && !packCoversSeason(name, season)) continue;
+    if (scope === "pack" && !ownRow && !packCoversSeason(scopeName, season)) continue;
     const kind = hindiAudioKind(name, row.payload?.original_language);
     if (hindiOnly && !kind) continue;
     candidates.push({

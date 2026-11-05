@@ -52,7 +52,7 @@ async function probe(row) {
 (async () => {
   const sb = getSupabaseClient();
   let query = sb.from("media_sources").select("id,media_id,media_title,magnet_link,download_url,stream_url,payload,created_at").eq("status", "ready");
-  if (SINCE) query = query.gte("created_at", SINCE);
+  if (SINCE) query = query.gte("updated_at", SINCE); // re-stored rows keep their created_at
   const rows = [];
   if (SHOWS.length) {
     for (const id of SHOWS) {
@@ -78,6 +78,12 @@ async function probe(row) {
     if (!groups.has(key)) groups.set(key, { key, rows: [] });
     groups.get(key).rows.push(row);
   }
+  // A torrent already known to have no Hindi track is hidden again without another probe (a script may store it anew).
+  const knownNone = [...groups.values()].filter((g) => memo[g.key] === "none");
+  if (APPLY) {
+    for (const g of knownNone) await sb.from("media_sources").update({ status: "hidden" }).in("id", g.rows.map((r) => r.id));
+  }
+  if (knownNone.length) console.log(`known no-Hindi torrents hidden again: ${knownNone.length} (${knownNone.reduce((n, g) => n + g.rows.length, 0)} rows)`);
   const todo = [...groups.values()].filter((g) => !memo[g.key]).slice(0, LIMIT);
   console.log(`rows ${rows.length} | torrents/seasons ${groups.size} | to probe ${todo.length}`);
 

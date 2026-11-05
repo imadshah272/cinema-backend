@@ -9,7 +9,12 @@
  *   shared pace for the rest of the run.
  */
 
-const BASE = "https://torrentio.strem.fun/stream";
+// Extra providers (tamilblasters / tamilmv carry many Hindi dubs) and Hindi-first ordering. The default
+// configuration missed releases such as "Vikings Season-1 ... Dual Audio [Hindi English]".
+const CONFIG =
+  process.env.TORRENTIO_CONFIG ||
+  "providers=yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tamilblasters,tamilmv,rutor,rutracker,torrent9|language=hindi";
+const BASE = `https://torrentio.strem.fun/${CONFIG}/stream`;
 const MIN_GAP_MS = 800;
 const MAX_GAP_MS = 5000;
 const BACKOFF_MS = [10000, 20000, 40000, 80000];
